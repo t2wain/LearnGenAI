@@ -1,5 +1,5 @@
 from typing import Iterable
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_core.document_loaders import BaseLoader
 from langchain.text_splitter import TextSplitter, RecursiveCharacterTextSplitter
@@ -34,3 +34,11 @@ def split_doc(docs: Iterable[Document]) -> list[Document]:
 
 def load_split_pdf(file_path: str) -> list[Document]:
     return split_doc(load_pdf(file_path))
+
+
+def load_text(file_path: str) -> Document:
+    docs = [doc for doc in TextLoader(file_path).load()]
+    if (docs):
+        return docs[0]
+    else:
+        raise ValueError(f"Failed to load text from {file_path}. No documents found.")
