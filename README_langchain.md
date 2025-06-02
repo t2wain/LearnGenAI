@@ -4,28 +4,39 @@ The objective is to learn how develop Generative AI app using the *langchain* / 
 
 ## Runnable
 
-- Runnable interface (common methods)
-    - invoke()
-    - stream()
-    - \_\_or__()
-    - \_\_ror__()
+Runnable interface (common methods)
+- invoke()
+- stream()
+- \_\_or__()
+- \_\_ror__()
 
-- Concrete Runnables
-    - RunnableLambda
-    - RunnableSequence
-    - RunnablePassthrough
-    - RunnableParallel
-    - RunnableEach
-    - RunnableBinding
-    - RunnableLike
-    - RunnableAssign
-    - RunnablePick
-    - RunnableBranch
-    - RunnableWithFallbacks
-    - RunnableRetry
-    - RouterRunnable
-    - RunnableConfigurableFields
-    - RunnableConfigurableAlternatives
+Concrete Runnables
+
+- RunnableSerializable(Serializable, Runnable)
+- RunnableLambda(Runnable)
+- RunnableSequence(RunnableSerializable)
+- RunnablePassthrough(RunnableSerializable)
+- RunnableParallel(RunnableSerializable)
+- RunnableEachBase(RunnableSerializable)
+- RunnableEach(RunnableEachBase)
+- RunnableBindingBase(RunnableSerializable)
+- RunnableBinding(RunnableBindingBase)
+- RunnableWithMessageHistory(RunnableBindingBase)
+
+- RunnableLike - typing
+- coerce_to_runnable(thing: RunnableLike) -> Runnable
+- chain() -> RunnableLambda (Decorate a function to make it a Runnable)
+
+- RunnablePassthrough(RunnableSerializable)
+- RunnableAssign(RunnableSerializable)
+- RunnablePick(RunnableSerializable)
+- RunnableBranch(RunnableSerializable)
+- RunnableWithFallbacks(RunnableSerializable)
+- RunnableRetry(RunnableSerializable)
+- RouterRunnable(RunnableSerializable)
+- DynamicRunnable(RunnableSerializable)
+- RunnableConfigurableFields(DynamicRunnable)
+- RunnableConfigurableAlternatives(DynamicRunnable)
 
 These Runnables are wrappers around other objects to implement additional logics and provide a common Runnable interface. Some of these Runnables are created using these methods:
 
@@ -46,19 +57,19 @@ RunnableSerializable(Runnable)
 
 ## Chaining
 
-- Chaining of Runnables
-    - Chaining of Runnables return a new Runnable
-    - Chaining is implemented by Python "or" (|) operator
-    - Invoking the chain will invoke all the Runnables in the chain
-    - Chain can be composed into serial or parallel branches to form a tree-like structure of Runnables
-    - Input and output data from each Runnable are passed along the chain
+Chaining of Runnables
+- Chaining of Runnables return a new Runnable
+- Chaining is implemented by Python "or" (|) operator
+- Invoking the chain will invoke all the Runnables in the chain
+- Chain can be composed into serial or parallel branches to form a tree-like structure of Runnables
+- Input and output data from each Runnable are passed along the chain
     
-- Objects that implemented Runnable
-    - Prompt
-    - LLM Model
-    - Chat Model
-    - Output Parser
-    - Tool
+Objects that implemented Runnable
+- Prompt
+- LLM Model
+- Chat Model
+- Output Parser
+- Tool
 
 Prompt, Chat Model, and Output Parser can be chained together to allow input and output data of these components to flow through the chain.
 
@@ -66,7 +77,7 @@ Prompt, Chat Model, and Output Parser can be chained together to allow input and
 
 LangChain provide these base classes that will be inherited by vendor-specific implementations to provide a common API
 
-- BaseLanguageModel
+- BaseLanguageModel(RunnableSerializable)
 - BaseChatModel(BaseLanguageModel)
 - SimpleChatModel(BaseChatModel)
 - BaseLLM(BaseLanguageModel)
@@ -193,7 +204,7 @@ A Prompt is a Runnable and when invoked return a PromptValue
 
 Messages are input and out unit values when invoking chat model.
 
-- BaseMessage
+- BaseMessage(Serializable)
 - ChatMessage(BaseMessage)
 - AIMessage(BaseMessage)
 - HumanMessage(BaseMessage)
@@ -235,9 +246,13 @@ Convenience methods to manipulate content blocks:
 
 #### Tool calling
 
-A response message (AIMessage) may be a tool call instruction. The result of a tool call is a tool message. Tool message can be added to the chat prompt to provide a complete sequence of communication.
+A response message (*AIMessage*) may be a tool call instruction.
 
-- ToolMessage(BaseMessage)
+AIMessage
+- tool_calls: list[ToolCall]
+
+Parsers
+
 - ToolCall(TypedDict)
 - InvalidToolCall(TypedDict)
 
@@ -245,9 +260,9 @@ A response message (AIMessage) may be a tool call instruction. The result of a t
 - invalid_tool_call() -> InvalidToolCall
 - default_tool_parser() -> tuple[list[ToolCall], list[InvalidToolCall]]
 
-A tool is a python function with input parameters and output object. Type annotation of input parameter and output object and help string will be used as further instruction to the model.
+ The result of a tool call is a tool message. Tool message can be added to the chat prompt to provide a complete sequence of communication.
 
-When pydantic object is used for input parameters and output object, the descriptive metadata of those pydantic object will be used as further instruction to the model.
+- ToolMessage(BaseMessage)
 
 #### AIMessage metadata (usage_metadata)
 
@@ -292,14 +307,220 @@ Pydantic
 
 - PydanticOutputParser
 
-#### Structured Output
+## Structured Output
 
-Model can be configured to respond with structured output in combination with instruction within the prompt sent to the model:
+Model can be configured to respond with structured output. Each vendor has its own specific implementation. Typical implementation returns a chain of a model with additional field binding (tools) and a corresponding output parser.
 
 BaseChatModel
-- bind_tools()
-- with_structured_output()
+- with_structured_output() -> Runnable
 
-#### Pydantic
+```python
+def with_structured_output(
+        self,
+        schema: Union[typing.Dict, type],
+        *,
+        include_raw: bool = False,
+        **kwargs: Any,
+    ) -> Runnable
+```
 
-Use pydantic library to define object with descriptive attributes. The descriptive metadata provides more instruction to the model so that the structured response from the model can be parsed into the same pydantic object.
+**schema**:
+
+The output schema. Can be passed in as:
+
+- an OpenAI function/tool schema,
+- a JSON Schema,
+- a TypedDict class,
+- or a Pydantic class.
+
+If ``schema`` is a Pydantic class then the *model output* will be a *Pydantic instance* of that class, and the model-generated fields *will be validated by the Pydantic class*. Otherwise the model output *will be a dict and will not be validated*. See `langchain_core.utils.function_calling.convert_to_openai_tool` for more on how to properly specify types and descriptions of schema fields when specifying a Pydantic or TypedDict class.
+
+**include_raw**:
+
+If False then only the parsed structured output is returned. If an error occurs during model output parsing it will be raised. If True then both the raw model response (a BaseMessage) and the parsed model response will be returned. If an error occurs during output parsing it will be caught and returned as well. The final output is always a dict with keys "raw", "parsed", and "parsing_error".
+
+Returns:
+
+A Runnable that takes same inputs as a `langchain_core.language_models.chat.BaseChatModel`.
+
+If ``include_raw`` is False and ``schema`` is a Pydantic class, Runnable outputs an instance of ``schema`` (i.e., a Pydantic object). 
+
+Otherwise, if ``include_raw`` is False then Runnable outputs a dict.
+
+If ``include_raw`` is True, then Runnable outputs a dict with keys:
+
+- ``"raw"``: BaseMessage
+- ``"parsed"``: None if there was a parsing error, otherwise the type depends on the ``schema`` as described above.
+- ``"parsing_error"``: Optional[BaseException]
+
+Example: Pydantic schema (include_raw=False):
+
+```python
+from pydantic import BaseModel
+
+class AnswerWithJustification(BaseModel):
+    '''An answer to the user question along with justification for the answer.'''
+    answer: str
+    justification: str
+
+llm = ChatModel(model="model-name", temperature=0)
+structured_llm = llm.with_structured_output(AnswerWithJustification)
+
+structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+```
+```python
+AnswerWithJustification(
+     answer='They weigh the same',
+     justification=(
+        'Both a pound of bricks and a pound of feathers weigh one pound. '
+        'The weight is the same, but the volume or density of the objects may differ.'
+     )
+)
+```
+
+Example: Pydantic schema (include_raw=True):
+
+```python
+from pydantic import BaseModel
+
+class AnswerWithJustification(BaseModel):
+    '''An answer to the user question along with justification for the answer.'''
+    answer: str
+    justification: str
+
+llm = ChatModel(model="model-name", temperature=0)
+structured_llm = llm.with_structured_output(AnswerWithJustification, include_raw=True)
+
+structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+```
+```python
+{
+    'raw': AIMessage(
+        content='', 
+        additional_kwargs={
+            'tool_calls': [
+                {'id': 'call_Ao02pnFYXD6GN1yzc0uXPsvF', 
+                'function': {
+                    'arguments': (
+                        '{"answer":"They weigh the same.","justification":"Both a pound of bricks '
+                        'and a pound of feathers weigh one pound. The weight is the same, '
+                        'but the volume or density of the objects may differ."}'
+                    ), 
+                    'name': 'AnswerWithJustification'}, 
+                    'type': 'function'
+                }
+            ]
+        }
+    ),
+    'parsed': AnswerWithJustification(
+        answer='They weigh the same.', 
+        justification=(
+            'Both a pound of bricks and a pound of feathers weigh one pound. '
+            'The weight is the same, but the volume or density of the objects may differ.'
+        )
+    ),
+    'parsing_error': None
+}
+```
+
+Example: Dict schema (include_raw=False):
+
+```python
+from pydantic import BaseModel
+from langchain_core.utils.function_calling import convert_to_openai_tool
+
+class AnswerWithJustification(BaseModel):
+    '''An answer to the user question along with justification for the answer.'''
+    answer: str
+    justification: str
+
+dict_schema = convert_to_openai_tool(AnswerWithJustification)
+llm = ChatModel(model="model-name", temperature=0)
+structured_llm = llm.with_structured_output(dict_schema)
+
+structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+```
+```python
+{
+    'answer': 'They weigh the same',
+    'justification': (
+        'Both a pound of bricks and a pound of feathers weigh one pound. '
+        'The weight is the same, but the volume and density of the two substances differ.'
+    )
+}
+```
+
+#### Ollama
+
+```python
+def with_structured_output(
+        self,
+        schema: Union[dict, type],
+        *,
+        method: Literal["function_calling", "json_mode", "json_schema"] = "json_schema",
+        include_raw: bool = False,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[dict, BaseModel]]
+```
+
+## Tools
+
+BaseChatModel
+- bind_tools() -> Runnable
+
+```python
+def bind_tools(
+        self,
+        tools: Sequence[
+            Union[typing.Dict[str, Any], type, Callable, BaseTool]
+        ],
+        *,
+        tool_choice: Optional[Union[str]] = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, BaseMessage]:
+```
+
+These langchain objects can be used to define "tool". Each vendor will has its own specific implementation of bind_tools(). Typically, it will call convert_to_openai_function() or convert_to_openai_tool() to generate schema to configure the underlying AI model.
+
+- BaseTool(RunnableSerializable)
+- Tool(BaseTool)
+- StructuredTool(BaseTool)
+- ToolException(Exception)
+
+- create_schema_from_function() -> BaseModel
+- get_all_basemodel_annotations() -> dict[str, type]
+- tool() -> Union[BaseTool, Callable[[Union[Callable, Runnable]], BaseTool]] (decorator)
+- convert_runnable_to_tool() -> BaseTool
+- render_text_description(tools: list[BaseTool]) -> str
+- render_text_description_and_args(tools: list[BaseTool]) -> str
+
+- RetrieverInput(BaseModel)
+- create_retriever_tool() -> Tool
+
+- FunctionDescription(TypedDict)
+- ToolDescription(TypedDict)
+- convert_to_openai_function() -> dict[str, Any]
+- convert_to_openai_tool() -> dict[str, Any]
+- convert_to_json_schema() -> dict[str, Any]
+- tool_example_to_messages() -> list[BaseMessage]
+
+## Pydantic
+
+Many langchain object is a Pydantic object:
+
+- BaseModel
+- Serializable(BaseModel, ABC)
+- RunnableSerializable(Serializable, Runnable)
+- BaseMessage(Serializable)
+- BaseTool(RunnableSerializable)
+
+Using pydantic for the following features:
+
+- deserialize to json
+- provide typing information to facilitate parsing and validation
+- provide description for object attributes that can be used within prompt
+
+Use pydantic when define the following:
+
+- Tool
+- Structured output
