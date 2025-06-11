@@ -77,10 +77,23 @@ Prompt, Chat Model, and Output Parser can be chained together to allow input and
 
 LangChain provide these base classes that will be inherited by vendor-specific implementations to provide a common API
 
-- BaseLanguageModel(RunnableSerializable)
+```python
+LanguageModelInput = Union[PromptValue, str, Sequence[MessageLikeRepresentation]]
+LanguageModelOutput = Union[BaseMessage, str]
+LanguageModelLike = Runnable[LanguageModelInput, LanguageModelOutput]
+LanguageModelOutputVar = TypeVar("LanguageModelOutputVar", BaseMessage, str)
+```
+
+- BaseLanguageModel(RunnableSerializable[LanguageModelInput, LanguageModelOutputVar])
+    - get_num_tokens(self, text: str) -> int
+    - get_num_tokens_from_messages(self, messages: list[BaseMessage], tools: Optional[Sequence] = None) -> int
 - BaseChatModel(BaseLanguageModel)
+    - invoke(self, input: LanguageModelInput) -> BaseMessage
+    - stream(self, input: LanguageModelInput) -> Iterator[BaseMessageChunk]:
 - SimpleChatModel(BaseChatModel)
 - BaseLLM(BaseLanguageModel)
+    - invoke(self, input: LanguageModelInput) -> str
+    - stream(self, input: LanguageModelInput) -> Iterator[str]
 - LLM(BaseLLM)
 - Embeddings
 
@@ -152,6 +165,11 @@ Prompt is the input data when invoking the model. Prompt allows input variables 
 Completion model
 
 - BasePromptTemplate(ABC)
+    - save(self, file_path: Union[Path, str]) -> None
+    - partial(self, **kwargs: Union[str, Callable[[], str]]) -> BasePromptTemplate
+    - format(self, **kwargs: Any) -> FormatOutputType
+    - invoke(input: dict) -> PromptValue
+    - format_prompt(self, **kwargs: Any) -> PromptValue
 - StringPromptTemplate(BasePromptTemplate, ABC)
 - PromptTemplate(StringPromptTemplate)
 - FewShotPromptWithTemplates(StringPromptTemplate)
@@ -160,19 +178,33 @@ Completion model
 Chat model
 
 - BaseChatPromptTemplate(BasePromptTemplate, ABC)
+    - format_messages(self, **kwargs: Any) -> list[BaseMessage]
+    - format_prompt(self, **kwargs: Any) -> PromptValue
+    - pretty_repr(self, html: bool = False) -> str
+    - pretty_print(self) -> None
 - ChatPromptTemplate(BaseChatPromptTemplate)
+    - from_template(cls, template: str, **kwargs: Any) -> ChatPromptTemplate
+    - from_messages(cls, messages: Sequence[MessageLikeRepresentation]) -> ChatPromptTemplate:
+- FewShotChatMessagePromptTemplate(BaseChatPromptTemplate)
 
 Prompt for chat model consists of messages. These are messages that allows input variables.
 
 - BaseMessagePromptTemplate(ABC)
+    - format_messages(self, **kwargs: Any) -> list[BaseMessage]
+    - pretty_repr(self, html: bool = False) -> str
+    - pretty_print(self) -> None
+    - \_\_add__(self, other: Any) -> ChatPromptTemplate
 - BaseStringMessagePromptTemplate(BaseMessagePromptTemplate, ABC)
 - MessagesPlaceholder(BaseMessagePromptTemplate)
 - _StringImageMessagePromptTemplate(BaseMessagePromptTemplate)
+    - prompt: Union[StringPromptTemplate, list[Union[StringPromptTemplate, ImagePromptTemplate]]]
+    - from_template(cls, template: Union[str, list[Union[str, _TextTemplateParam, _ImageTemplateParam]]]) -> Self
+    - from_template_file(cls, template_file: Union[str, Path], input_variables: list[str]) -> Self
+    - format(self, **kwargs: Any) -> BaseMessage
 - HumanMessagePromptTemplate(_StringImageMessagePromptTemplate)
 - AIMessagePromptTemplate(_StringImageMessagePromptTemplate)
 - SystemMessagePromptTemplate(_StringImageMessagePromptTemplate)
 - ChatMessagePromptTemplate(BaseStringMessagePromptTemplate)
-- FewShotChatMessagePromptTemplate(BaseChatPromptTemplate)
 
 Messages can be of the following types:
 
@@ -194,9 +226,15 @@ MessageLikeRepresentation = Union[
 
 A Prompt is a Runnable and when invoked return a PromptValue
 
+- BasePromptTemplate(ABC)
+    - invoke(input: dict) -> PromptValue
+    - format_prompt(self, **kwargs: Any) -> PromptValue
+
 - PromptValue(ABC)
 - StringPromptValue(PromptValue)
+    - text: str
 - ChatPromptValue(PromptValue)
+    - messages: Sequence[BaseMessage]
 - ImagePromptValue(PromptValue)
     - image_url: ImageURL(TypedDict)
 
@@ -205,12 +243,20 @@ A Prompt is a Runnable and when invoked return a PromptValue
 Messages are input and out unit values when invoking chat model.
 
 - BaseMessage(Serializable)
+    - type: str
 - ChatMessage(BaseMessage)
+    - role: str
+    - type: Literal["chat"] = "chat"
 - AIMessage(BaseMessage)
+    - type: Literal["ai"] = "ai"
 - HumanMessage(BaseMessage)
+    - type: Literal["human"] = "human"
 - SystemMessage(BaseMessage)
+    - type: Literal["system"] = "system"
 - FunctionMessage(BaseMessage)
+    - type: Literal["function"] = "function"
 - RemoveMessage(BaseMessage)
+    - type: Literal["remove"] = "remove"
 
 Convenience methods to manipulate messages:
 
@@ -228,9 +274,8 @@ Convenience methods to manipulate messages:
 
 A message consists of one or more content blocks:
 
-```python
-content: Union[str, list[Union[str, dict]]]
-```
+- BaseMessage(Serializable)
+    - content: Union[str, list[Union[str, dict]]]
 
 - BaseDataContentBlock(TypedDict)
 - URLContentBlock(BaseDataContentBlock)
@@ -248,8 +293,9 @@ Convenience methods to manipulate content blocks:
 
 A response message (*AIMessage*) may be a tool call instruction.
 
-AIMessage
-- tool_calls: list[ToolCall]
+- AIMessage(BaseMessage)
+    - tool_calls: list[ToolCall] = []
+    - invalid_tool_calls: list[InvalidToolCall] = []
 
 Parsers
 
@@ -266,6 +312,9 @@ Parsers
 
 #### AIMessage metadata (usage_metadata)
 
+- AIMessage(BaseMessage)
+    - usage_metadata: Optional[UsageMetadata] = None
+
 - UsageMetadata(TypedDict)
 - InputTokenDetails(TypedDict)
 - OutputTokenDetails(TypedDict)
@@ -277,20 +326,29 @@ Parsers
 
 Model can be instructed to output structured response such as csv, list, xml, or tool calls. Langchain provides various parser to return a Python data object.
 
+- BaseOutputParser(BaseLLMOutputParser, RunnableSerializable[LanguageModelOutput, T])
+    - invoke(self, input: Union[str, BaseMessage]) -> T
 - JsonOutputParser
+    - get_format_instructions(self) -> str
 - ListOutputParser
 - CommaSeparatedListOutputParser
+    - get_format_instructions(self) -> str
 - NumberedListOutputParser
+    - get_format_instructions(self) -> str
 - MarkdownListOutputParser
+    - get_format_instructions(self) -> str
 - StrOutputParser
 - XMLOutputParser
+    - get_format_instructions(self) -> str
 
 OpenAI functions
 
 - OutputFunctionsParser
+    - parse_result(self, result: list[Generation], *, partial: bool = False) -> Any
 - JsonOutputFunctionsParser
 - JsonKeyOutputFunctionsParser
 - PydanticOutputFunctionsParser
+    - pydantic_schema: Union[type[BaseModel], dict[str, type[BaseModel]]]
 - PydanticAttrOutputFunctionsParser
 
 OpenAI tools
@@ -306,6 +364,7 @@ OpenAI tools
 Pydantic
 
 - PydanticOutputParser
+    - pydantic_object: Annotated[type[TBaseModel], SkipValidation()]
 
 ## Structured Output
 

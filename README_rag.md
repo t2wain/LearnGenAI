@@ -71,7 +71,7 @@ The embedding model returns a vector of decimal number (embedding) for an input 
 - OpenAIEmbeddings(BaseModel, Embeddings)
 - AzureOpenAIEmbeddings(OpenAIEmbeddings)
 
-### Vector Store and Retriever
+## Vector Store and Retriever
 
 Vector store provides implementation for generating embeddings (with a given embedding model) and storing both embeddings and documents. Retriever provides implementation for querying documents from a vector store. Typical implementation combines both of these functionalities.
 
@@ -82,7 +82,7 @@ Vector store provides implementation for generating embeddings (with a given emb
     - embeddings(self) -> Optional[Embeddings]
     - as_retriever(self, **kwargs: Any) -> VectorStoreRetriever
 
-#### Implementations of vector store
+### Implementations of vector store
 
 - InMemoryVectorStore(VectorStore)
     - \_\_init__(self, embedding: Embeddings) -> None
